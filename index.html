@@ -1,0 +1,2353 @@
+```html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>太空飄飄</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #090b16;
+            font-family: 'Fredoka', 'Noto Sans TC', sans-serif;
+            touch-action: none; /* 防止手機滑動捲動網頁 */
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* 玻璃擬態 UI */
+        .glass-panel {
+            background: rgba(18, 22, 43, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        .btn-bounce {
+            transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+        }
+        .btn-bounce:active {
+            transform: scale(0.93);
+        }
+        @keyframes floatSlow {
+            0%, 100% { transform: translateY(0px) rotate(-2deg); }
+            50% { transform: translateY(-8px) rotate(2deg); }
+        }
+        .animate-float {
+            animation: floatSlow 3.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full flex items-center justify-center">
+
+    <!-- 遊戲主畫布 -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 頂部 HUD 狀態列 (遊戲進行中顯示) -->
+    <div id="hudLayer" class="hidden absolute top-0 left-0 w-full p-3 sm:p-5 flex justify-between items-start pointer-events-none z-10">
+        <!-- 左側：Luna 狀態 -->
+        <div id="lunaHudBox" class="glass-panel rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 flex flex-col items-start gap-1 border-pink-300/30">
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-[#fbb6d3] inline-block shadow-[0_0_8px_#fbb6d3]"></span>
+                <span class="text-pink-200 text-xs sm:text-sm font-bold tracking-wide">Luna</span>
+            </div>
+            <div id="pinkHearts" class="flex items-center gap-1 text-lg sm:text-xl">
+                <!-- 愛心動態生成 -->
+            </div>
+        </div>
+
+        <!-- 中央：分數與距離 或 尋寶進度 -->
+        <div id="centerHudBox" class="glass-panel rounded-2xl px-2.5 py-2 sm:px-5 sm:py-2.5 flex flex-col items-center shrink-1 mx-1">
+            <span id="centerHudLabel" class="text-indigo-300 text-[10px] sm:text-xs font-bold uppercase tracking-widest">飄流距離</span>
+            <span id="scoreDisplay" class="text-white text-xl sm:text-3xl font-black tracking-wider">0 m</span>
+            <!-- 尋寶模式 10 顆友情寶珠收集列（一列五個、兩排排列） -->
+            <div id="treasureHudRow" class="hidden grid grid-cols-5 gap-1.5 sm:gap-2 mt-1.5 justify-items-center">
+                <!-- 動態生成 10 顆寶珠進度點 -->
+            </div>
+        </div>
+
+        <!-- 右側：Haru 狀態 -->
+        <div id="haruHudBox" class="glass-panel rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 flex flex-col items-end gap-1 border-sky-300/30">
+            <div class="flex items-center gap-2">
+                <span class="text-sky-200 text-xs sm:text-sm font-bold tracking-wide">Haru</span>
+                <span class="w-3 h-3 rounded-full bg-[#b9dcfa] inline-block shadow-[0_0_8px_#b9dcfa]"></span>
+            </div>
+            <div id="blueHearts" class="flex items-center gap-1 text-lg sm:text-xl">
+                <!-- 愛心動態生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 音效開關按鈕 (保持與生命值格子的適當距離) -->
+    <div id="topControls" class="hidden absolute top-24 sm:top-28 right-3 sm:right-5 flex gap-2 z-20">
+        <button id="soundToggleBtn" class="glass-panel w-10 h-10 rounded-full flex items-center justify-center text-white text-lg btn-bounce cursor-pointer" title="切換音效">
+            <svg id="soundIcon" class="w-5 h-5 fill-current text-white" viewBox="0 0 24 24">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 開始畫面 Overlay -->
+    <div id="startScreen" class="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-5 z-30 bg-[#090b16]/70 backdrop-blur-sm">
+        <div class="glass-panel max-w-md w-full rounded-3xl px-4 py-6 sm:p-8 flex flex-col items-center text-center border-2 border-indigo-400/20">
+            <h1 class="text-3xl sm:text-4xl font-black text-white mb-2 tracking-wide drop-shadow-md">
+                太空飄飄
+            </h1>
+            <p class="text-slate-300 text-sm sm:text-base mb-4 leading-relaxed">
+                守護可愛的小太空人<span class="text-pink-200 font-bold">Luna</span>與<span class="text-sky-200 font-bold">Haru</span><br>
+                閃避危險的隕石與太空碎片
+            </p>
+
+            <!-- 角色預覽畫布 (點擊 Luna 或 Haru 可進入各自單人模式) -->
+            <div class="w-full h-36 sm:h-40 rounded-2xl bg-[#11152b]/80 border border-white/10 mb-4 flex items-center justify-center overflow-hidden relative">
+                <canvas id="previewCanvas" class="w-full h-full cursor-pointer"></canvas>
+            </div>
+
+            <!-- 操作與規則說明 (拓寬左右空間讓電腦操作在手機上完整呈現一行) -->
+            <div class="w-full bg-white/5 rounded-2xl px-2.5 py-3.5 sm:p-4 mb-5 text-left space-y-1.5 text-[11px] sm:text-sm text-slate-200">
+                <div class="flex items-start gap-1.5 sm:gap-2">
+                    <span class="text-indigo-300 font-bold">•</span>
+                    <span><b>手機操作：</b>用手指拖曳移動小太空人</span>
+                </div>
+                <div class="flex items-start gap-1.5 sm:gap-2">
+                    <span class="text-indigo-300 font-bold">•</span>
+                    <span class="whitespace-nowrap"><b>電腦操作：</b>用滑鼠拖曳，或用WASD/方向鍵操縱</span>
+                </div>
+                <div class="flex items-start gap-1.5 sm:gap-2">
+                    <span class="text-indigo-300 font-bold">•</span>
+                    <span>兩位小太空人各自有3顆愛心</span>
+                </div>
+                <div class="flex items-start gap-1.5 sm:gap-2">
+                    <span class="text-indigo-300 font-bold">•</span>
+                    <span>若失去其中一位小太空人，另一位仍會繼續奮戰</span>
+                </div>
+            </div>
+
+            <div class="w-full flex flex-col gap-2.5">
+                <button id="startBtn" class="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-[#f8a5c2] via-[#c792ea] to-[#82ccdd] text-slate-900 font-black text-lg sm:text-xl btn-bounce cursor-pointer">
+                    遊戲開始
+                </button>
+                <div class="w-full grid grid-cols-2 gap-2.5">
+                    <button id="soloModeBtn" class="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-pink-300/30 text-pink-100 font-bold text-sm sm:text-base btn-bounce cursor-pointer">
+                        單人模式
+                    </button>
+                    <button id="treasureModeBtn" class="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-sky-300/30 text-sky-100 font-bold text-sm sm:text-base btn-bounce cursor-pointer">
+                        尋寶模式
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 遊戲結束結算 Overlay -->
+    <div id="gameOverScreen" class="hidden absolute inset-0 flex flex-col items-center justify-center p-5 z-30 bg-[#090b16]/80 backdrop-blur-md">
+        <div class="glass-panel max-w-sm w-full rounded-3xl p-6 sm:p-8 flex flex-col items-center text-center border-2 border-pink-400/20">
+            <h2 id="gameOverTitle" class="text-2xl sm:text-3xl font-black text-white mb-6">遊戲結束</h2>
+
+            <div id="standardResultGrid" class="w-full grid grid-cols-2 gap-3 mb-6">
+                <div class="bg-white/5 rounded-2xl p-3 border border-white/10">
+                    <div class="text-xs text-slate-400 mb-1">飄流距離</div>
+                    <div id="finalScore" class="text-2xl font-black text-pink-300">0 m</div>
+                </div>
+                <div class="bg-white/5 rounded-2xl p-3 border border-white/10">
+                    <div class="text-xs text-slate-400 mb-1">最高紀錄</div>
+                    <div id="bestScore" class="text-2xl font-black text-sky-300">0 m</div>
+                </div>
+            </div>
+
+            <div id="treasureResultBox" class="hidden w-full bg-white/5 rounded-2xl p-4 border border-white/10 mb-6 flex flex-col items-center gap-2">
+                <div id="treasureResultSubtitle" class="text-sm text-slate-300 font-bold">已收集友情寶珠</div>
+                <div id="treasureResultCount" class="text-2xl font-black text-amber-200">0 / 10</div>
+                <div id="treasureResultOrbs" class="flex items-center justify-center gap-1.5 flex-wrap mt-1"></div>
+            </div>
+
+            <div class="w-full flex flex-col gap-3">
+                <button id="restartBtn" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#fbb6d3] to-[#b9dcfa] text-slate-900 font-black text-lg shadow-lg btn-bounce cursor-pointer">
+                    再次出發
+                </button>
+                <button id="homeBtn" class="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 text-white font-bold text-base btn-bounce cursor-pointer">
+                    回主畫面
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 太空飄飄
+         * 核心設計：
+         * 1. 嚴格還原兩位小太空人角色外觀（Luna 與 Haru），包含漂浮姿態、手部揮動、臉部可愛表情與柔和褐色描邊。
+         * 2. 支援雙人經典模式、單人模式（含 Luna 射擊球與 Haru 防護罩專屬道具）與尋寶模式（收集 10 顆柔和彩色寶珠）。
+         * 3. 支援多點觸控 (Multi-touch)、滑鼠拖曳與鍵盤 WASD / 方向鍵操作。
+         */
+
+        // ==========================================
+        // 1. 音效合成器 (Tone.js 無外部音檔依賴)
+        // ==========================================
+        class SoundManager {
+            constructor() {
+                this.enabled = true;
+                this.initialized = false;
+                this.synth = null;
+                this.noiseSynth = null;
+            }
+
+            async init() {
+                if (this.initialized) return;
+                try {
+                    await Tone.start();
+                    this.synth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: "triangle" },
+                        envelope: { attack: 0.02, decay: 0.15, sustain: 0.1, release: 0.4 }
+                    }).toDestination();
+                    this.synth.volume.value = -8;
+
+                    this.noiseSynth = new Tone.NoiseSynth({
+                        noise: { type: "brown" },
+                        envelope: { attack: 0.01, decay: 0.25, sustain: 0, release: 0.2 }
+                    }).toDestination();
+                    this.noiseSynth.volume.value = -10;
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn("Audio init skipped:", e);
+                }
+            }
+
+            playHeal() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.synth.triggerAttackRelease("C5", "16n", now);
+                this.synth.triggerAttackRelease("E5", "16n", now + 0.08);
+                this.synth.triggerAttackRelease("G5", "16n", now + 0.16);
+                this.synth.triggerAttackRelease("C6", "8n", now + 0.24);
+            }
+
+            playHit() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.noiseSynth.triggerAttackRelease("8n", now);
+                this.synth.triggerAttackRelease(["A2", "Eb2"], "8n", now);
+            }
+
+            playBomb() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.noiseSynth.triggerAttackRelease("4n", now);
+                this.synth.triggerAttackRelease(["C3", "G2", "D2"], "8n", now);
+                this.synth.triggerAttackRelease("F3", "16n", now + 0.12);
+            }
+
+            playShoot() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.synth.triggerAttackRelease("G5", "32n", now);
+            }
+
+            playShieldBlock() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.synth.triggerAttackRelease("B5", "16n", now);
+                this.synth.triggerAttackRelease("E6", "16n", now + 0.06);
+            }
+
+            playFall() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.synth.triggerAttackRelease("G4", "8n", now);
+                this.synth.triggerAttackRelease("E4", "8n", now + 0.15);
+                this.synth.triggerAttackRelease("C4", "8n", now + 0.30);
+                this.synth.triggerAttackRelease("G3", "4n", now + 0.45);
+            }
+
+            playStart() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.synth.triggerAttackRelease("E4", "16n", now);
+                this.synth.triggerAttackRelease("G4", "16n", now + 0.09);
+                this.synth.triggerAttackRelease("B4", "8n", now + 0.18);
+            }
+        }
+
+        const sound = new SoundManager();
+
+        // ==========================================
+        // 2. 角色高精度繪製系統 (忠實還原原圖設計)
+        // ==========================================
+        /**
+         * 繪製小太空人
+         * @param {CanvasRenderingContext2D} ctx 畫布上下文
+         * @param {Object} astro 太空人狀態物件
+         */
+        function drawAstronaut(ctx, astro) {
+            ctx.save();
+            ctx.translate(astro.x, astro.y);
+
+            // 受傷無敵閃爍效果（若處於爆炸亂彈狀態則維持完整可見以便看清亂彈動態）
+            if (astro.alive && astro.invulnTimer > 0 && !(astro.bounceTimer > 0)) {
+                if (Math.floor(astro.invulnTimer * 16) % 2 === 0) {
+                    ctx.globalAlpha = 0.45;
+                }
+            }
+
+            // 失去三條命後的狀態：顏色漸暗（使用高效能色彩插值取代逐幀動態 CSS filter，避免手機與電腦瀏覽器卡頓）
+            if (!astro.alive) {
+                ctx.rotate(astro.fallRotation);
+            } else {
+                // 使用經過平滑插值的 currentAngle，讓左右傾斜旋轉更加絲滑流暢
+                ctx.rotate(astro.currentAngle || 0);
+            }
+
+            const s = astro.scale;
+            ctx.scale(s, s);
+
+            // 色彩線性插值輔助函式（用於被擊墜後平滑變暗變灰，效能極佳零卡頓）
+            const darkenPct = !astro.alive ? Math.min(1, astro.grayProgress) : 0;
+            const lerpHexColor = (hex1, hex2, t) => {
+                if (t <= 0) return hex1;
+                const r1 = parseInt(hex1.slice(1, 3), 16), g1 = parseInt(hex1.slice(3, 5), 16), b1 = parseInt(hex1.slice(5, 7), 16);
+                const r2 = parseInt(hex2.slice(1, 3), 16), g2 = parseInt(hex2.slice(3, 5), 16), b2 = parseInt(hex2.slice(5, 7), 16);
+                const r = Math.round(r1 + (r2 - r1) * t);
+                const g = Math.round(g1 + (g2 - g1) * t);
+                const b = Math.round(b1 + (b2 - b1) * t);
+                return `rgb(${r}, ${g}, ${b})`;
+            };
+
+            // 配色定義 (完全依照原圖粉紅與淺藍配色，擊墜後平滑過渡至暗灰調)
+            const isPink = astro.type === 'pink';
+            const suitColor = lerpHexColor(isPink ? '#fbb6d3' : '#b9dcfa', '#6e7280', darkenPct);
+            const highlightColor = lerpHexColor(isPink ? '#ffd4e6' : '#dcf0ff', '#8b90a0', darkenPct);
+            const strokeColor = lerpHexColor('#9b8373', '#4a4852', darkenPct);
+            const skinColor = lerpHexColor('#fff2df', '#8f8b88', darkenPct);
+            const hairColor = lerpHexColor('#c3a17e', '#635c58', darkenPct);
+            const cheekColor = lerpHexColor('#fbd0dc', '#7d777c', darkenPct);
+            const bowColor = lerpHexColor('#f49cbb', '#66636e', darkenPct);
+
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = 3.2;
+            ctx.strokeStyle = strokeColor;
+
+            // --- 1. 背後氧氣背包 ---
+            ctx.fillStyle = suitColor;
+            ctx.beginPath();
+            ctx.roundRect(-34, -18, 68, 46, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            // --- 2. 左右手臂 (隨漂浮自然擺動) ---
+            const waveLeft = astro.alive ? Math.sin(astro.animTime * 3.5 + astro.phaseOffset) * 0.18 : 0.25;
+            const waveRight = astro.alive ? Math.cos(astro.animTime * 3.5 + astro.phaseOffset) * 0.18 : -0.25;
+
+            // 左手 (粉紅太空人揮手較高，還原圖2/圖3可愛動態)
+            ctx.save();
+            ctx.translate(-29, 4);
+            ctx.rotate((isPink ? 0.35 : 0.15) + waveLeft);
+            ctx.fillStyle = suitColor;
+            ctx.beginPath();
+            ctx.roundRect(-24, -10, 28, 22, 11);
+            ctx.fill();
+            ctx.stroke();
+            // 袖口反光線
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = 2.4;
+            ctx.beginPath();
+            ctx.moveTo(-14, -6);
+            ctx.lineTo(-14, 7);
+            ctx.stroke();
+            ctx.restore();
+
+            // 右手 (淺藍太空人揮手較高)
+            ctx.save();
+            ctx.translate(29, 4);
+            ctx.rotate((isPink ? -0.15 : -0.35) + waveRight);
+            ctx.fillStyle = suitColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 3.2;
+            ctx.beginPath();
+            ctx.roundRect(-4, -10, 28, 22, 11);
+            ctx.fill();
+            ctx.stroke();
+            // 袖口反光線
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = 2.4;
+            ctx.beginPath();
+            ctx.moveTo(14, -6);
+            ctx.lineTo(14, 7);
+            ctx.stroke();
+            ctx.restore();
+
+            // --- 3. 身體與雙腿 (連身太空服) ---
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 3.2;
+            ctx.fillStyle = suitColor;
+
+            ctx.beginPath();
+            // 從左上肩開始順時針繪製圓潤連身服
+            ctx.moveTo(-29, -4);
+            ctx.quadraticCurveTo(-34, 18, -30, 38);
+            // 左腿
+            ctx.lineTo(-29, 55);
+            ctx.quadraticCurveTo(-29, 64, -16, 64);
+            ctx.quadraticCurveTo(-4, 64, -4, 54);
+            ctx.lineTo(-4, 44);
+            // 褲檔弧線
+            ctx.quadraticCurveTo(0, 42, 4, 44);
+            // 右腿
+            ctx.lineTo(4, 54);
+            ctx.quadraticCurveTo(4, 64, 16, 64);
+            ctx.quadraticCurveTo(29, 64, 29, 55);
+            ctx.lineTo(30, 38);
+            // 右側身
+            ctx.quadraticCurveTo(34, 18, 29, -4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // 褲管線條細節
+            ctx.beginPath();
+            ctx.moveTo(-29, 49);
+            ctx.quadraticCurveTo(-16, 52, -4, 49);
+            ctx.moveTo(4, 49);
+            ctx.quadraticCurveTo(16, 52, 29, 49);
+            // 褲襠分岔處車縫弧線（貼合大腿內側上方，類似嬰兒連身服）
+            ctx.moveTo(-4, 43);
+            ctx.quadraticCurveTo(0, 41, 4, 43);
+            ctx.stroke();
+
+            // 腿部淺色反光條
+            ctx.strokeStyle = highlightColor;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(-25, 44);
+            ctx.lineTo(-9, 45);
+            ctx.moveTo(9, 45);
+            ctx.lineTo(25, 44);
+            ctx.stroke();
+
+            // 胸前圓角矩形控制面板
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2.8;
+            ctx.fillStyle = suitColor;
+            ctx.beginPath();
+            ctx.roundRect(-16, 6, 32, 20, 6);
+            ctx.fill();
+            ctx.stroke();
+
+            // --- 4. 太空頭盔外罩 ---
+            ctx.fillStyle = suitColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 3.2;
+            ctx.beginPath();
+            ctx.ellipse(0, -28, 37, 34, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // 領口環狀領圈
+            ctx.beginPath();
+            ctx.moveTo(-26, -4);
+            ctx.quadraticCurveTo(0, 4, 26, -4);
+            ctx.stroke();
+
+            // --- 5. 頭盔面罩與可愛臉龐 ---
+            ctx.fillStyle = skinColor;
+            ctx.beginPath();
+            ctx.ellipse(0, -25, 29, 24, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 使用頭盔內框裁切區域，確保頭髮完美貼合內框且絕不溢出
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(0, -25, 29, 24, 0, 0, Math.PI * 2);
+            ctx.clip();
+
+            // 瀏海 (保留原本可愛髮型，並嚴格限制在頭盔內框內)
+            ctx.fillStyle = hairColor;
+            ctx.beginPath();
+            if (isPink) {
+                // Luna 斜分瀏海
+                ctx.arc(0, -26, 28.5, Math.PI * 1.03, Math.PI * 1.97);
+                ctx.quadraticCurveTo(18, -32, 10, -37);
+                ctx.quadraticCurveTo(2, -31, -6, -37);
+                ctx.quadraticCurveTo(-16, -30, -28.2, -28);
+            } else {
+                // Haru 可愛雲朵瀏海
+                ctx.arc(0, -26, 28.5, Math.PI * 1.03, Math.PI * 1.97);
+                ctx.quadraticCurveTo(20, -33, 14, -37);
+                ctx.quadraticCurveTo(7, -32, 0, -37);
+                ctx.quadraticCurveTo(-7, -32, -14, -37);
+                ctx.quadraticCurveTo(-20, -33, -28.2, -28);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // 重新描繪頭盔面罩外框線條，確保輪廓清晰完整
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 3.2;
+            ctx.beginPath();
+            ctx.ellipse(0, -25, 29, 24, 0, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // 腮紅
+            ctx.fillStyle = cheekColor;
+            ctx.beginPath();
+            ctx.ellipse(-16, -20, 4.5, 3, 0, 0, Math.PI * 2);
+            ctx.ellipse(16, -20, 4.5, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 面罩玻璃白色高光弧線（稍微向外靠且避開腮紅與外框）
+            ctx.strokeStyle = lerpHexColor('#ffffff', '#9ea2b0', darkenPct);
+            ctx.lineWidth = 3.2;
+            ctx.beginPath();
+            if (isPink) {
+                ctx.ellipse(0, -25, 25, 20.5, 0, Math.PI * 0.96, Math.PI * 1.15);
+            } else {
+                ctx.ellipse(0, -25, 25, 20.5, 0, Math.PI * 1.85, Math.PI * 0.04);
+            }
+            ctx.stroke();
+
+            // 表情 (存活時開心微笑，受傷 3 秒內或失去夥伴 60 秒內呈現 ＞_＜ 表情，失去生命時變成暈眩表情)
+            ctx.strokeStyle = strokeColor;
+            ctx.fillStyle = strokeColor;
+            ctx.lineWidth = 2.6;
+
+            if (astro.alive) {
+                // 判斷是否顯示 ＞_＜ 表情：
+                // 1. 剩餘 1 條命時固定顯示 (astro.hp === 1)
+                // 2. 受傷後 3 秒內 (hurtTimer > 0)
+                // 3. 失去同伴後 1 分鐘內 (sadPartnerTimer > 0)
+                // 4. 失去同伴已滿 1 分鐘，但自身生命值未滿 3 條命 (partnerLost && hp < maxHp)
+                const isScaredFace = astro.hp === 1 || astro.sadPartnerTimer > 0 || astro.hurtTimer > 0 || (astro.partnerLost && astro.hp < astro.maxHp);
+                const isHappyFace = astro.happyTimer > 0 || astro.buddyHappy;
+                if (isScaredFace) {
+                    // ＞_＜ 表情
+                    ctx.lineWidth = 2.4;
+                    // 左眼 ＞
+                    ctx.beginPath();
+                    ctx.moveTo(-14, -26.5);
+                    ctx.lineTo(-9.5, -24);
+                    ctx.lineTo(-14, -21.5);
+                    ctx.stroke();
+
+                    // 右眼 ＜
+                    ctx.beginPath();
+                    ctx.moveTo(14, -26.5);
+                    ctx.lineTo(9.5, -24);
+                    ctx.lineTo(14, -21.5);
+                    ctx.stroke();
+
+                    // 小鼻子
+                    ctx.beginPath();
+                    ctx.arc(0, -22, 2.2, Math.PI * 1.1, Math.PI * 1.9);
+                    ctx.stroke();
+
+                    // 緊閉的波浪/一字小嘴 _
+                    ctx.beginPath();
+                    ctx.moveTo(-4.5, -16.5);
+                    ctx.quadraticCurveTo(0, -17.5, 4.5, -16.5);
+                    ctx.stroke();
+                } else {
+                    // 豆豆眼或彎彎笑眼
+                    if (isHappyFace) {
+                        // 吃到愛心或雙人靠近時的彎彎笑眼 ^_^
+                        ctx.beginPath();
+                        ctx.arc(-11, -23, 3.2, Math.PI, 0);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(11, -23, 3.2, Math.PI, 0);
+                        ctx.stroke();
+                    } else {
+                        // 經典可愛豆豆眼
+                        ctx.beginPath();
+                        ctx.ellipse(-11, -24, 1.8, 2.5, 0, 0, Math.PI * 2);
+                        ctx.ellipse(11, -24, 1.8, 2.5, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // 小鼻子
+                    ctx.beginPath();
+                    ctx.arc(0, -22, 2.2, Math.PI * 1.1, Math.PI * 1.9);
+                    ctx.stroke();
+
+                    // 可愛嘴巴
+                    ctx.beginPath();
+                    if (isHappyFace) {
+                        // 開心張嘴笑 (閉合路徑，讓外框完整包住嘴巴)
+                        ctx.fillStyle = '#c49a76';
+                        ctx.arc(0, -17.5, 4.2, 0, Math.PI);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+                    } else {
+                        // 溫柔微笑
+                        ctx.arc(0, -18, 4.5, 0.15 * Math.PI, 0.85 * Math.PI);
+                        ctx.stroke();
+                    }
+                }
+            } else {
+                // 耗盡生命時的 X X 暈眩眼與難過小嘴
+                ctx.lineWidth = 2.4;
+                // 左眼 X
+                ctx.beginPath();
+                ctx.moveTo(-14, -27);
+                ctx.lineTo(-9, -22);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(-9, -27);
+                ctx.lineTo(-14, -22);
+                ctx.stroke();
+
+                // 右眼 X
+                ctx.beginPath();
+                ctx.moveTo(9, -27);
+                ctx.lineTo(14, -22);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(14, -27);
+                ctx.lineTo(9, -22);
+                ctx.stroke();
+
+                // 難過小嘴
+                ctx.beginPath();
+                ctx.arc(0, -14, 4, 1.15 * Math.PI, 1.85 * Math.PI);
+                ctx.stroke();
+            }
+
+            // --- 6. Luna 頭頂右側粉色蝴蝶結 ---
+            if (isPink) {
+                ctx.save();
+                ctx.translate(23, -44);
+                ctx.rotate(0.28);
+                ctx.fillStyle = bowColor;
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = 2.6;
+
+                // 左翼
+                ctx.beginPath();
+                ctx.moveTo(-2, 0);
+                ctx.quadraticCurveTo(-13, -8, -12, 0);
+                ctx.quadraticCurveTo(-13, 8, -2, 0);
+                ctx.fill();
+                ctx.stroke();
+
+                // 右翼
+                ctx.beginPath();
+                ctx.moveTo(2, 0);
+                ctx.quadraticCurveTo(13, -8, 12, 0);
+                ctx.quadraticCurveTo(13, 8, 2, 0);
+                ctx.fill();
+                ctx.stroke();
+
+                // 中央結扣
+                ctx.beginPath();
+                ctx.roundRect(-3.5, -3.5, 7, 7, 2.5);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            }
+            // --- 7. Haru 單人模式防護罩視覺特效（完整包覆全身） ---
+            if (astro.alive && astro.shieldTimer > 0) {
+                const pulse = 1 + Math.sin(astro.animTime * 8) * 0.035;
+                const shieldR = 84 * pulse;
+                const shieldCenterY = 2;
+                const alpha = astro.shieldTimer < 2.5 ? (0.35 + 0.35 * Math.sin(astro.shieldTimer * 18)) : 0.78;
+
+                ctx.save();
+                const grad = ctx.createRadialGradient(0, shieldCenterY, shieldR * 0.45, 0, shieldCenterY, shieldR);
+                grad.addColorStop(0, 'rgba(185, 220, 250, 0.04)');
+                grad.addColorStop(0.75, `rgba(147, 197, 253, ${0.22 * alpha})`);
+                grad.addColorStop(1, `rgba(220, 240, 255, ${0.68 * alpha})`);
+
+                ctx.fillStyle = grad;
+                ctx.strokeStyle = `rgba(185, 220, 250, ${0.92 * alpha})`;
+                ctx.lineWidth = 3.2;
+                ctx.beginPath();
+                ctx.arc(0, shieldCenterY, shieldR, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 護罩表面高光
+                ctx.strokeStyle = `rgba(255, 255, 255, ${0.72 * alpha})`;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.arc(0, shieldCenterY, shieldR - 7, Math.PI * 1.15, Math.PI * 1.45);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // 3. 遊戲核心狀態與物理邏輯
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas.getContext('2d');
+
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+        let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            if (previewCanvas) {
+                const rect = previewCanvas.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    previewCanvas.width = rect.width * dpr;
+                    previewCanvas.height = rect.height * dpr;
+                    previewCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                }
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // 尋寶模式 10 顆柔和彩色寶珠定義
+        const TREASURE_ORBS = [
+            { id: 'green', name: '綠色', color: '#86efac', light: '#dcfce7', stroke: '#4ade80' },
+            { id: 'red', name: '紅色', color: '#fda4af', light: '#ffe4e6', stroke: '#fb7185' },
+            { id: 'cream', name: '米白色', color: '#fef3c7', light: '#fffbeb', stroke: '#fde68a' },
+            { id: 'blue', name: '藍色', color: '#93c5fd', light: '#dbeafe', stroke: '#60a5fa' },
+            { id: 'purple', name: '紫色', color: '#d8b4fe', light: '#f3e8ff', stroke: '#c084fc' },
+            { id: 'orange', name: '橙色', color: '#fdba74', light: '#ffedd5', stroke: '#fb923c' },
+            { id: 'lightgreen', name: '淺綠色', color: '#bef264', light: '#ecfccb', stroke: '#a3e635' },
+            { id: 'yellow', name: '黃色', color: '#fde047', light: '#fef9c3', stroke: '#facc15' },
+            { id: 'pink', name: '粉紅色', color: '#f9a8d4', light: '#fce7f3', stroke: '#f472b6' },
+            { id: 'skyblue', name: '淺藍色', color: '#7dd3fc', light: '#e0f2fe', stroke: '#38bdf8' }
+        ];
+
+        // 遊戲狀態與模式變數
+        let gameState = 'START'; // 'START' | 'PLAYING' | 'GAMEOVER'
+        let gameMode = 'CLASSIC'; // 'CLASSIC' | 'SOLO' | 'TREASURE'
+        let soloCharacter = 'pink'; // 'pink' (Luna) | 'blue' (Haru)
+        let distance = 0;
+        let bestDistance = parseInt(localStorage.getItem('twinAstroBest') || '0', 10);
+        let difficulty = 1;
+        let lastTime = 0;
+        let screenShake = 0;
+
+        // 兩位主角實體
+        let astronauts = [];
+        // 背景星空與星雲
+        let stars = [];
+        let nebulas = [];
+        // 障礙物 (隕石、太空碎片、爆裂炸彈)
+        let obstacles = [];
+        // 回血道具、單人模式特殊球、尋寶彩色寶珠
+        let items = [];
+        // Luna 單人模式發射的粉色小球子彈
+        let projectiles = [];
+        // 尋寶模式已收集的寶珠 ID 集合
+        let collectedOrbs = new Set();
+        // 粒子特效與浮動文字
+        let particles = [];
+        let floatingTexts = [];
+
+        // 生成計時器
+        let obstacleTimer = 0;
+        let itemTimer = 0;
+        let specialItemTimer = 0;
+        // 雙人靠近計時器
+        let buddyCloseTime = 0;
+        let buddyBonusTickTimer = 0;
+
+        // 初始化背景星空
+        function initBackground() {
+            stars = [];
+            const starCount = Math.floor((width * height) / 6500);
+            for (let i = 0; i < starCount; i++) {
+                stars.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    size: Math.random() * 2.2 + 0.6,
+                    speed: Math.random() * 45 + 15,
+                    alpha: Math.random() * 0.7 + 0.3,
+                    twinkle: Math.random() * Math.PI * 2
+                });
+            }
+
+            nebulas = [
+                { x: width * 0.2, y: height * 0.3, r: Math.max(width, height) * 0.35, color: 'rgba(248, 165, 194, 0.06)' },
+                { x: width * 0.8, y: height * 0.65, r: Math.max(width, height) * 0.4, color: 'rgba(130, 204, 221, 0.07)' },
+                { x: width * 0.5, y: height * 0.15, r: Math.max(width, height) * 0.3, color: 'rgba(162, 155, 254, 0.06)' }
+            ];
+        }
+
+        // 建立單一太空人實體的工廠函式
+        function createAstronautEntity(type, x, y, baseScale) {
+            const isPink = type === 'pink';
+            return {
+                id: type,
+                type: type,
+                name: isPink ? 'Luna' : 'Haru',
+                x,
+                y,
+                targetX: x,
+                targetY: y,
+                vx: 0,
+                vy: 0,
+                radius: 34 * baseScale,
+                scale: baseScale,
+                hp: 3,
+                maxHp: 3,
+                alive: true,
+                invulnTimer: 0,
+                happyTimer: 0,
+                buddyHappy: false,
+                hurtTimer: 0,
+                sadPartnerTimer: 0,
+                partnerLost: false,
+                // 爆炸障礙物亂彈狀態
+                bounceTimer: 0,
+                finalBouncesLeft: 0,
+                bounceVx: 0,
+                bounceVy: 0,
+                // 單人模式專屬道具狀態
+                shootTimer: 0,
+                shootCooldown: 0,
+                shieldTimer: 0,
+                currentAngle: 0,
+                angularVelocity: 0,
+                animTime: 0,
+                phaseOffset: isPink ? 0 : 1.8,
+                // 失能墜落狀態
+                grayProgress: 0,
+                fallVy: 0,
+                fallVx: isPink ? -25 : 25,
+                fallRotation: 0,
+                fallRotSpeed: isPink ? -1.4 : 1.4,
+                pointerId: null
+            };
+        }
+
+        // 依目前遊戲模式更新頂部 HUD 排版
+        function configureModeHUD() {
+            const lunaBox = document.getElementById('lunaHudBox');
+            const haruBox = document.getElementById('haruHudBox');
+            const centerLabel = document.getElementById('centerHudLabel');
+            const scoreDisplay = document.getElementById('scoreDisplay');
+            const treasureHudRow = document.getElementById('treasureHudRow');
+            const topControls = document.getElementById('topControls');
+
+            if (gameMode === 'SOLO') {
+                // 單人模式：只顯示該角色的生命值格子與飄流距離，左右對稱排版合宜
+                if (soloCharacter === 'pink') {
+                    lunaBox.classList.remove('hidden');
+                    haruBox.classList.add('hidden');
+                } else {
+                    lunaBox.classList.add('hidden');
+                    haruBox.classList.remove('hidden');
+                }
+                centerLabel.textContent = '飄流距離';
+                scoreDisplay.classList.remove('hidden');
+                treasureHudRow.classList.add('hidden');
+                topControls.className = 'absolute top-24 sm:top-28 right-3 sm:right-5 flex gap-2 z-20';
+            } else if (gameMode === 'TREASURE') {
+                // 尋寶模式：顯示雙人生命值，中央顯示 10 顆友情寶珠收集進度，不計算距離
+                lunaBox.classList.remove('hidden');
+                haruBox.classList.remove('hidden');
+                centerLabel.textContent = '友情寶珠 0 / 10';
+                scoreDisplay.classList.add('hidden');
+                treasureHudRow.classList.remove('hidden');
+                topControls.className = 'absolute top-24 sm:top-28 right-3 sm:right-5 flex gap-2 z-20';
+                updateTreasureHUD();
+            } else {
+                // 經典雙人模式
+                lunaBox.classList.remove('hidden');
+                haruBox.classList.remove('hidden');
+                centerLabel.textContent = '飄流距離';
+                scoreDisplay.classList.remove('hidden');
+                treasureHudRow.classList.add('hidden');
+                topControls.className = 'absolute top-24 sm:top-28 right-3 sm:right-5 flex gap-2 z-20';
+            }
+        }
+
+        // 更新尋寶模式頂部 10 顆友情寶珠收集狀態
+        function updateTreasureHUD() {
+            const centerLabel = document.getElementById('centerHudLabel');
+            const row = document.getElementById('treasureHudRow');
+            centerLabel.textContent = `友情寶珠 ${collectedOrbs.size} / 10`;
+
+            row.innerHTML = TREASURE_ORBS.map(orb => {
+                const got = collectedOrbs.has(orb.id);
+                if (got) {
+                    return `<span title="${orb.name}" class="w-3 h-3 sm:w-4 sm:h-4 rounded-full inline-block border border-white/80 transition-transform scale-110" style="background:${orb.color}; box-shadow: 0 0 8px ${orb.color};"></span>`;
+                } else {
+                    return `<span title="${orb.name}" class="w-3 h-3 sm:w-4 sm:h-4 rounded-full inline-block border border-white/25 bg-white/10 opacity-45"></span>`;
+                }
+            }).join('');
+        }
+
+        // 重置遊戲實體
+        function resetGame() {
+            distance = 0;
+            difficulty = 1;
+            obstacles = [];
+            items = [];
+            projectiles = [];
+            collectedOrbs = new Set();
+            particles = [];
+            floatingTexts = [];
+            obstacleTimer = 0.6;
+            itemTimer = 5.5;
+            specialItemTimer = 14.0; // 發光愛心平均約 9.75 秒一顆，1/3 頻率約每 29 秒（首次稍快登場以便體驗）
+            buddyCloseTime = 0;
+            buddyBonusTickTimer = 0;
+            screenShake = 0;
+            activePointers.clear();
+
+            const baseScale = Math.min(0.85, Math.max(0.62, width / 620));
+
+            if (gameMode === 'SOLO') {
+                astronauts = [
+                    createAstronautEntity(soloCharacter, width * 0.5, height * 0.68, baseScale)
+                ];
+            } else {
+                astronauts = [
+                    createAstronautEntity('pink', width * 0.32, height * 0.68, baseScale),
+                    createAstronautEntity('blue', width * 0.68, height * 0.68, baseScale)
+                ];
+            }
+
+            configureModeHUD();
+            updateHeartsUI();
+            document.getElementById('scoreDisplay').textContent = '0 m';
+        }
+
+        // 更新頂部愛心 UI
+        function updateHeartsUI() {
+            const pinkContainer = document.getElementById('pinkHearts');
+            const blueContainer = document.getElementById('blueHearts');
+
+            const renderHearts = (astro) => {
+                let html = '';
+                for (let i = 0; i < astro.maxHp; i++) {
+                    if (i < astro.hp && astro.alive) {
+                        html += `<svg class="w-5 h-5 text-rose-400 drop-shadow-[0_0_6px_rgba(255,107,129,0.8)] inline-block transition-transform duration-200 fill-current" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+                    } else {
+                        html += `<svg class="w-5 h-5 text-slate-600 opacity-40 inline-block fill-current" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+                    }
+                }
+                return html;
+            };
+
+            const luna = astronauts.find(a => a.type === 'pink');
+            const haru = astronauts.find(a => a.type === 'blue');
+            if (luna) pinkContainer.innerHTML = renderHearts(luna);
+            if (haru) blueContainer.innerHTML = renderHearts(haru);
+        }
+
+        // 產生粒子特效
+        function spawnParticles(x, y, color, count = 14, speed = 160) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = (Math.random() * 0.6 + 0.4) * speed;
+                particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd,
+                    size: Math.random() * 4.5 + 2,
+                    color,
+                    life: 1,
+                    decay: Math.random() * 1.4 + 1.2
+                });
+            }
+        }
+
+        // 產生浮動提示文字
+        function spawnFloatingText(x, y, text, color) {
+            floatingTexts.push({
+                x,
+                y,
+                text,
+                color,
+                life: 1.2
+            });
+        }
+
+        // ==========================================
+        // 4. 障礙物與道具生成
+        // ==========================================
+        function spawnObstacle() {
+            const margin = 35;
+            const x = margin + Math.random() * (width - margin * 2);
+            const r = Math.random() * 16 + 18; // 半徑 18 ~ 34
+            // 新增爆炸障礙物 ('bomb')，出現機率為其他障礙物的 1/5 (5 個一般障礙物對 1 個爆炸障礙物)
+            const types = ['meteor', 'meteor', 'satellite', 'scrap', 'meteor', 'bomb'];
+            const type = types[Math.floor(Math.random() * types.length)];
+
+            // 生成不規則隕石頂點
+            const vertices = [];
+            const numVerts = 9;
+            for (let i = 0; i < numVerts; i++) {
+                const ang = (i / numVerts) * Math.PI * 2;
+                const dist = r * (0.8 + Math.random() * 0.32);
+                vertices.push({ x: Math.cos(ang) * dist, y: Math.sin(ang) * dist });
+            }
+
+            // 隨難度提升速度，並帶有些微水平漂移
+            const baseSpeed = (165 + Math.random() * 95) * (1 + (difficulty - 1) * 0.22);
+            const vx = (Math.random() - 0.5) * 75 * difficulty;
+
+            obstacles.push({
+                x,
+                y: -r - 20,
+                vx,
+                vy: baseSpeed,
+                radius: r * 0.85,
+                visualRadius: r,
+                type,
+                vertices,
+                rotation: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 3.2,
+                pulseTime: Math.random() * Math.PI * 2
+            });
+        }
+
+        function spawnHealItem() {
+            const margin = 45;
+            const x = margin + Math.random() * (width - margin * 2);
+            items.push({
+                kind: 'heal',
+                x,
+                y: -30,
+                vx: 0,
+                vy: 135 + Math.random() * 35,
+                radius: 20,
+                pulse: 0,
+                rotation: 0,
+                rotSpeed: 0
+            });
+        }
+
+        // 生成單人模式專屬微笑球道具（出現頻率為發光愛心的 1/3）
+        function spawnSoloPowerupItem() {
+            const margin = 45;
+            const x = margin + Math.random() * (width - margin * 2);
+            const isPink = soloCharacter === 'pink';
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            items.push({
+                kind: isPink ? 'pink_shooter' : 'blue_shield',
+                x,
+                y: -32,
+                vx: dir * (38 + Math.random() * 24),
+                vy: 115 + Math.random() * 25,
+                radius: 21,
+                pulse: 0,
+                rotation: Math.random() * Math.PI * 2,
+                rotSpeed: dir * 2.4 // 緩慢地滾來滾去
+            });
+        }
+
+        // 生成尋寶模式柔和彩色寶珠（出現頻率為發光愛心的 1/3）
+        function spawnTreasureOrbItem() {
+            const remaining = TREASURE_ORBS.filter(o => !collectedOrbs.has(o.id));
+            if (remaining.length === 0) return;
+
+            const orbDef = remaining[Math.floor(Math.random() * remaining.length)];
+            const margin = 45;
+            const x = margin + Math.random() * (width - margin * 2);
+            items.push({
+                kind: 'treasure_orb',
+                orbDef,
+                x,
+                y: -30,
+                vx: (Math.random() - 0.5) * 30,
+                vy: 125 + Math.random() * 25,
+                radius: 19,
+                pulse: 0,
+                rotation: 0,
+                rotSpeed: 0
+            });
+        }
+
+        // 繪製障礙物 (隕石 / 太空碎片 / 爆炸障礙物)
+        function drawObstacle(ctx, obs) {
+            ctx.save();
+            ctx.translate(obs.x, obs.y);
+            ctx.rotate(obs.rotation);
+
+            if (obs.type === 'meteor') {
+                // 隕石主體
+                const grad = ctx.createRadialGradient(-obs.visualRadius * 0.3, -obs.visualRadius * 0.3, 4, 0, 0, obs.visualRadius);
+                grad.addColorStop(0, '#9a8c98');
+                grad.addColorStop(0.6, '#5c5470');
+                grad.addColorStop(1, '#352f44');
+
+                ctx.fillStyle = grad;
+                ctx.strokeStyle = '#b8b8d1';
+                ctx.lineWidth = 2;
+
+                ctx.beginPath();
+                obs.vertices.forEach((v, idx) => {
+                    if (idx === 0) ctx.moveTo(v.x, v.y);
+                    else ctx.lineTo(v.x, v.y);
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 隕石坑洞
+                ctx.fillStyle = 'rgba(28, 25, 40, 0.55)';
+                ctx.beginPath();
+                ctx.arc(-obs.visualRadius * 0.25, -obs.visualRadius * 0.15, obs.visualRadius * 0.22, 0, Math.PI * 2);
+                ctx.arc(obs.visualRadius * 0.28, obs.visualRadius * 0.22, obs.visualRadius * 0.16, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (obs.type === 'satellite') {
+                // 廢棄人造衛星碎片
+                const r = obs.visualRadius;
+                // 太陽能板
+                ctx.fillStyle = '#3b82f6';
+                ctx.strokeStyle = '#93c5fd';
+                ctx.lineWidth = 1.8;
+                ctx.fillRect(-r * 1.35, -r * 0.32, r * 2.7, r * 0.64);
+                ctx.strokeRect(-r * 1.35, -r * 0.32, r * 2.7, r * 0.64);
+
+                // 金色主機艙
+                ctx.fillStyle = '#f59e0b';
+                ctx.strokeStyle = '#fef3c7';
+                ctx.beginPath();
+                ctx.roundRect(-r * 0.5, -r * 0.55, r, r * 1.1, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                // 天線
+                ctx.beginPath();
+                ctx.moveTo(0, -r * 0.55);
+                ctx.lineTo(0, -r * 0.95);
+                ctx.stroke();
+            } else if (obs.type === 'bomb') {
+                // 新增：太空爆裂炸彈障礙物
+                const r = obs.visualRadius;
+                const blink = 0.65 + 0.35 * Math.sin(obs.pulseTime * 9);
+
+                // 外圈危險光暈
+                const warnGlow = ctx.createRadialGradient(0, 0, r * 0.3, 0, 0, r * 1.35);
+                warnGlow.addColorStop(0, `rgba(251, 146, 60, ${0.45 * blink})`);
+                warnGlow.addColorStop(1, 'rgba(251, 146, 60, 0)');
+                ctx.fillStyle = warnGlow;
+                ctx.beginPath();
+                ctx.arc(0, 0, r * 1.35, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 四周爆炸刺釘
+                ctx.fillStyle = '#fb923c';
+                ctx.strokeStyle = '#fed7aa';
+                ctx.lineWidth = 1.6;
+                for (let k = 0; k < 8; k++) {
+                    const ang = (k / 8) * Math.PI * 2;
+                    ctx.save();
+                    ctx.rotate(ang);
+                    ctx.beginPath();
+                    ctx.moveTo(-4, -r * 0.82);
+                    ctx.lineTo(0, -r * 1.16);
+                    ctx.lineTo(4, -r * 0.82);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // 炸彈深色球體
+                const bodyGrad = ctx.createRadialGradient(-r * 0.25, -r * 0.25, 3, 0, 0, r * 0.9);
+                bodyGrad.addColorStop(0, '#475569');
+                bodyGrad.addColorStop(0.7, '#1e293b');
+                bodyGrad.addColorStop(1, '#0f172a');
+                ctx.fillStyle = bodyGrad;
+                ctx.strokeStyle = '#fdba74';
+                ctx.lineWidth = 2.2;
+                ctx.beginPath();
+                ctx.arc(0, 0, r * 0.86, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 中央閃爍爆炸警示核心
+                ctx.fillStyle = `rgba(253, 186, 116, ${blink})`;
+                ctx.beginPath();
+                ctx.arc(0, 0, r * 0.34, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // 金屬太空垃圾碎片
+                const r = obs.visualRadius;
+                ctx.fillStyle = '#64748b';
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-r * 0.8, -r * 0.5);
+                ctx.lineTo(r * 0.7, -r * 0.7);
+                ctx.lineTo(r * 0.9, r * 0.4);
+                ctx.lineTo(-r * 0.3, r * 0.8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 警示紅燈
+                ctx.fillStyle = '#fb7185';
+                ctx.beginPath();
+                ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        // 繪製道具 (發光愛心 / 單人模式笑臉球 / 尋寶彩色寶珠)
+        function drawItem(ctx, item) {
+            ctx.save();
+            ctx.translate(item.x, item.y);
+
+            if (item.kind === 'heal') {
+                const scale = 1 + Math.sin(item.pulse) * 0.12;
+                ctx.scale(scale, scale);
+
+                // 外圍光暈
+                const glow = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
+                glow.addColorStop(0, 'rgba(255, 118, 168, 0.7)');
+                glow.addColorStop(1, 'rgba(255, 118, 168, 0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(0, 0, 26, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 氣泡外框
+                ctx.fillStyle = 'rgba(255, 240, 246, 0.94)';
+                ctx.strokeStyle = '#ff75a0';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.arc(0, 0, 16, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 圓潤飽滿的愛心圖案
+                ctx.fillStyle = '#ff477e';
+                ctx.beginPath();
+                ctx.moveTo(0, 7.2);
+                ctx.bezierCurveTo(-5, 4.5, -10.5, 0.5, -10.5, -3.5);
+                ctx.arc(-5.25, -3.5, 5.25, Math.PI, 0, false);
+                ctx.arc(5.25, -3.5, 5.25, Math.PI, 0, false);
+                ctx.bezierCurveTo(10.5, 0.5, 5, 4.5, 0, 7.2);
+                ctx.closePath();
+                ctx.fill();
+            } else if (item.kind === 'pink_shooter' || item.kind === 'blue_shield') {
+                // 單人模式專屬道具：粉紅色或淺藍色球狀物，用白色畫著笑臉，會緩慢地滾來滾去
+                const isPinkBall = item.kind === 'pink_shooter';
+                const mainColor = isPinkBall ? '#fbb6d3' : '#b9dcfa';
+                const lightColor = isPinkBall ? '#ffd4e6' : '#dcf0ff';
+                const borderColor = isPinkBall ? '#f472b6' : '#60a5fa';
+
+                // 柔和光暈
+                const glow = ctx.createRadialGradient(0, 0, 5, 0, 0, 28);
+                glow.addColorStop(0, isPinkBall ? 'rgba(251, 182, 211, 0.65)' : 'rgba(185, 220, 250, 0.65)');
+                glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(0, 0, 28, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 隨滾動角度旋轉球體與白色笑臉
+                ctx.rotate(item.rotation);
+
+                const ballGrad = ctx.createRadialGradient(-5, -5, 2, 0, 0, 18);
+                ballGrad.addColorStop(0, lightColor);
+                ballGrad.addColorStop(1, mainColor);
+                ctx.fillStyle = ballGrad;
+                ctx.strokeStyle = borderColor;
+                ctx.lineWidth = 2.4;
+                ctx.beginPath();
+                ctx.arc(0, 0, 18, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 用白色畫著可愛笑臉
+                ctx.strokeStyle = '#ffffff';
+                // 用白色畫著可愛笑臉（豆豆眼 + 微笑）
+                ctx.strokeStyle = '#ffffff';
+                ctx.fillStyle = '#ffffff';
+                ctx.lineWidth = 2.3;
+                ctx.lineCap = 'round';
+
+                // 白色豆豆眼
+                ctx.beginPath();
+                ctx.ellipse(-5.5, -3.2, 1.7, 2.3, 0, 0, Math.PI * 2);
+                ctx.ellipse(5.5, -3.2, 1.7, 2.3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 白色微笑嘴巴
+                ctx.beginPath();
+                ctx.arc(0, 1.5, 5.2, 0.12 * Math.PI, 0.88 * Math.PI);
+                ctx.stroke();
+            } else if (item.kind === 'treasure_orb') {
+                // 尋寶模式：圓形柔和彩色寶珠
+                const orb = item.orbDef;
+                const scale = 1 + Math.sin(item.pulse) * 0.08;
+                ctx.scale(scale, scale);
+
+                // 外圈柔和光暈
+                const glow = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
+                glow.addColorStop(0, orb.light);
+                glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(0, 0, 26, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 寶珠主體漸層
+                const orbGrad = ctx.createRadialGradient(-5, -5, 2, 0, 0, 16);
+                orbGrad.addColorStop(0, '#ffffff');
+                orbGrad.addColorStop(0.35, orb.light);
+                orbGrad.addColorStop(1, orb.color);
+                ctx.fillStyle = orbGrad;
+                ctx.strokeStyle = orb.stroke;
+                ctx.lineWidth = 2.3;
+                ctx.beginPath();
+                ctx.arc(0, 0, 15.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 寶珠晶瑩反光點
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.beginPath();
+                ctx.ellipse(-5, -5.5, 3.8, 2.2, -Math.PI / 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // 5. 多點觸控 & 滑鼠 & 鍵盤操控系統
+        // ==========================================
+        const activePointers = new Map(); // pointerId -> { astro, offsetX, offsetY }
+
+        function handlePointerDown(e) {
+            if (gameState !== 'PLAYING') return;
+            e.preventDefault();
+
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+
+            // 尋找距離觸控點最近、尚存活、非爆炸亂彈中且未被其他手指鎖定的太空人
+            let bestAstro = null;
+            let bestDist = Infinity;
+
+            for (const astro of astronauts) {
+                if (!astro.alive || astro.bounceTimer > 0) continue;
+                if (astro.pointerId !== null) continue;
+
+                const d = Math.hypot(px - astro.x, py - astro.y);
+                if (d < 140 && d < bestDist) {
+                    bestDist = d;
+                    bestAstro = astro;
+                }
+            }
+
+            // 若手指點擊在畫面左半或右半較遠處，且該側太空人未被佔用，也可直接引導過去
+            if (!bestAstro) {
+                if (astronauts.length === 1) {
+                    const solo = astronauts[0];
+                    if (solo && solo.alive && solo.bounceTimer <= 0 && solo.pointerId === null) {
+                        bestAstro = solo;
+                    }
+                } else {
+                    const preferPink = px < width * 0.5;
+                    const candidate = preferPink ? astronauts[0] : astronauts[1];
+                    const fallback = preferPink ? astronauts[1] : astronauts[0];
+
+                    if (candidate && candidate.alive && candidate.bounceTimer <= 0 && candidate.pointerId === null) {
+                        bestAstro = candidate;
+                    } else if (fallback && fallback.alive && fallback.bounceTimer <= 0 && fallback.pointerId === null) {
+                        bestAstro = fallback;
+                    }
+                }
+            }
+
+            if (bestAstro) {
+                bestAstro.pointerId = e.pointerId;
+                const touchLift = e.pointerType === 'touch' ? 58 : 0;
+                const dist = Math.hypot(px - bestAstro.x, py - bestAstro.y);
+                const useOffset = dist < 85;
+                activePointers.set(e.pointerId, {
+                    astro: bestAstro,
+                    offsetX: useOffset ? bestAstro.x - px : 0,
+                    offsetY: useOffset ? (bestAstro.y - py) - touchLift * 0.5 : -touchLift
+                });
+                const pad = 32;
+                if (!useOffset) {
+                    bestAstro.targetX = Math.max(pad, Math.min(width - pad, px));
+                    bestAstro.targetY = Math.max(pad + 50, Math.min(height - pad, py - touchLift));
+                } else if (touchLift > 0) {
+                    bestAstro.targetY = Math.max(pad + 50, Math.min(height - pad, bestAstro.y - touchLift * 0.5));
+                }
+            }
+        }
+
+        function handlePointerMove(e) {
+            if (gameState !== 'PLAYING') return;
+            const binding = activePointers.get(e.pointerId);
+            if (!binding) return;
+
+            const astro = binding.astro;
+            // 若操控過程中該太空人剛好失去生命或進入爆炸亂彈，立即解除控制權
+            if (!astro.alive || astro.bounceTimer > 0) {
+                astro.pointerId = null;
+                activePointers.delete(e.pointerId);
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+
+            const pad = 32;
+            astro.targetX = Math.max(pad, Math.min(width - pad, px + binding.offsetX));
+            astro.targetY = Math.max(pad + 50, Math.min(height - pad, py + binding.offsetY));
+        }
+
+        function handlePointerUp(e) {
+            const binding = activePointers.get(e.pointerId);
+            if (binding) {
+                binding.astro.pointerId = null;
+                activePointers.delete(e.pointerId);
+            }
+        }
+
+        canvas.addEventListener('pointerdown', handlePointerDown);
+        canvas.addEventListener('pointermove', handlePointerMove);
+        canvas.addEventListener('pointerup', handlePointerUp);
+        canvas.addEventListener('pointercancel', handlePointerUp);
+
+        // 鍵盤輔助控制 (WASD 控制 Luna，方向鍵控制 Haru；單人模式兩組按鍵皆可操控主角)
+        const keys = {};
+        window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        function applyKeyboardControl(dt) {
+            const pad = 32;
+            const luna = astronauts.find(a => a.type === 'pink');
+            const haru = astronauts.find(a => a.type === 'blue');
+
+            if (gameMode === 'SOLO') {
+                const solo = astronauts[0];
+                if (solo && solo.alive && solo.bounceTimer <= 0 && solo.pointerId === null) {
+                    const moveSpeed = 360;
+                    if (keys['KeyA'] || keys['ArrowLeft']) solo.targetX -= moveSpeed * dt;
+                    if (keys['KeyD'] || keys['ArrowRight']) solo.targetX += moveSpeed * dt;
+                    if (keys['KeyW'] || keys['ArrowUp']) solo.targetY -= moveSpeed * dt;
+                    if (keys['KeyS'] || keys['ArrowDown']) solo.targetY += moveSpeed * dt;
+                    solo.targetX = Math.max(pad, Math.min(width - pad, solo.targetX));
+                    solo.targetY = Math.max(pad + 50, Math.min(height - pad, solo.targetY));
+                }
+                return;
+            }
+
+            // 粉紅太空人 Luna: W A S D
+            if (luna && luna.alive && luna.bounceTimer <= 0 && luna.pointerId === null) {
+                const moveSpeed = 360;
+                if (keys['KeyA']) luna.targetX -= moveSpeed * dt;
+                if (keys['KeyD']) luna.targetX += moveSpeed * dt;
+                if (keys['KeyW']) luna.targetY -= moveSpeed * dt;
+                if (keys['KeyS']) luna.targetY += moveSpeed * dt;
+                luna.targetX = Math.max(pad, Math.min(width - pad, luna.targetX));
+                luna.targetY = Math.max(pad + 50, Math.min(height - pad, luna.targetY));
+            }
+
+            // 淺藍太空人 Haru: 方向鍵（若 Luna 已陣亡，Haru 移動速度變得很慢）
+            if (haru && haru.alive && haru.bounceTimer <= 0 && haru.pointerId === null) {
+                const haruSlowed = luna && !luna.alive;
+                const moveSpeed = haruSlowed ? 38 : 360;
+                if (keys['ArrowLeft']) haru.targetX -= moveSpeed * dt;
+                if (keys['ArrowRight']) haru.targetX += moveSpeed * dt;
+                if (keys['ArrowUp']) haru.targetY -= moveSpeed * dt;
+                if (keys['ArrowDown']) haru.targetY += moveSpeed * dt;
+                haru.targetX = Math.max(pad, Math.min(width - pad, haru.targetX));
+                haru.targetY = Math.max(pad + 50, Math.min(height - pad, haru.targetY));
+            }
+        }
+
+        // ==========================================
+        // 6. 遊戲主迴圈更新與碰撞判定
+        // ==========================================
+        function update(dt) {
+            // 背景星空持續流動
+            stars.forEach(s => {
+                s.y += s.speed * (gameState === 'PLAYING' ? (1 + (difficulty - 1) * 0.3) : 0.4) * dt;
+                s.twinkle += dt * 3;
+                if (s.y > height) {
+                    s.y = -5;
+                    s.x = Math.random() * width;
+                }
+            });
+
+            if (gameState !== 'PLAYING') return;
+
+            // 更新漂流距離與難度曲線（尋寶模式不計算距離，維持溫和難度成長）
+            if (gameMode === 'TREASURE') {
+                difficulty = Math.min(2.2, difficulty + dt * 0.015);
+            } else {
+                distance += dt * 5 * (1 + (difficulty - 1) * 0.15);
+                difficulty = 1 + Math.min(2.5, distance / 300);
+                document.getElementById('scoreDisplay').textContent = `${Math.floor(distance)} m`;
+            }
+
+            if (screenShake > 0) {
+                screenShake = Math.max(0, screenShake - dt * 28);
+            }
+
+            applyKeyboardControl(dt);
+
+            const luna = astronauts.find(a => a.type === 'pink');
+            const haru = astronauts.find(a => a.type === 'blue');
+            const pad = 32;
+
+            // 更新太空人狀態
+            let anyAlive = false;
+            for (const astro of astronauts) {
+                astro.animTime += dt;
+
+                if (astro.alive) {
+                    anyAlive = true;
+                    if (astro.invulnTimer > 0) astro.invulnTimer -= dt;
+                    if (astro.happyTimer > 0) astro.happyTimer -= dt;
+                    if (astro.hurtTimer > 0) astro.hurtTimer -= dt;
+                    if (astro.sadPartnerTimer > 0) astro.sadPartnerTimer -= dt;
+                    if (astro.shieldTimer > 0) astro.shieldTimer = Math.max(0, astro.shieldTimer - dt);
+
+                    // Luna 單人模式射擊道具：持續 15 秒發射粉色小球破壞前方障礙物
+                    if (astro.shootTimer > 0) {
+                        astro.shootTimer = Math.max(0, astro.shootTimer - dt);
+                        astro.shootCooldown -= dt;
+                        if (astro.shootCooldown <= 0) {
+                            astro.shootCooldown = 0.24;
+                            projectiles.push({
+                                x: astro.x,
+                                y: astro.y - astro.radius - 10,
+                                vy: -560,
+                                radius: 8
+                            });
+                            sound.playShoot();
+                        }
+                    }
+
+                    if (astro.bounceTimer > 0) {
+                        // 爆炸障礙物造成的 2 秒到處亂彈效果
+                        astro.bounceTimer -= dt;
+                        astro.x += astro.bounceVx * dt;
+                        astro.y += astro.bounceVy * dt;
+                        astro.currentAngle += (astro.bounceVx >= 0 ? 11 : -11) * dt;
+
+                        if (astro.x < pad) {
+                            astro.x = pad;
+                            astro.bounceVx = Math.abs(astro.bounceVx);
+                        } else if (astro.x > width - pad) {
+                            astro.x = width - pad;
+                            astro.bounceVx = -Math.abs(astro.bounceVx);
+                        }
+
+                        if (astro.y < pad + 50) {
+                            astro.y = pad + 50;
+                            astro.bounceVy = Math.abs(astro.bounceVy);
+                        } else if (astro.y > height - pad) {
+                            astro.y = height - pad;
+                            astro.bounceVy = -Math.abs(astro.bounceVy);
+                        }
+
+                        // 亂彈結束後恢復正常位置追蹤
+                        if (astro.bounceTimer <= 0) {
+                            astro.bounceTimer = 0;
+                            astro.targetX = astro.x;
+                            astro.targetY = astro.y;
+                        }
+                    } else {
+                        // 正常移動：若 Haru 在雙人模式中失去 Luna，移動速度變得很慢
+                        const isHaruSlowed = astro.type === 'blue' && luna && !luna.alive;
+                        const trackSpeed = isHaruSlowed ? 0.65 : 14;
+                        const lerpFactor = Math.min(1, dt * trackSpeed);
+                        const prevX = astro.x;
+                        const prevY = astro.y;
+                        astro.x += (astro.targetX - astro.x) * lerpFactor;
+                        astro.y += (astro.targetY - astro.y) * lerpFactor;
+                        astro.vx = (astro.x - prevX) / Math.max(dt, 0.001);
+                        astro.vy = (astro.y - prevY) / Math.max(dt, 0.001);
+
+                        // 太空漂流旋轉動態
+                        const baseSpinDir = astro.type === 'pink' ? 1 : -1;
+                        const baseSpinSpeed = baseSpinDir * 0.75;
+                        const moveSpinInfluence = Math.max(-3.2, Math.min(3.2, astro.vx * 0.005));
+                        const targetAngularVel = baseSpinSpeed + moveSpinInfluence;
+                        astro.angularVelocity += (targetAngularVel - astro.angularVelocity) * Math.min(1, dt * 8);
+                        astro.currentAngle += astro.angularVelocity * dt;
+                    }
+                } else {
+                    astro.grayProgress = Math.min(1, astro.grayProgress + dt * 1.6);
+
+                    if (astro.bounceTimer > 0) {
+                        // 剩 1 條命撞到炸彈：先到處亂彈 2 秒
+                        astro.bounceTimer -= dt;
+                        astro.x += astro.bounceVx * dt;
+                        astro.y += astro.bounceVy * dt;
+                        astro.fallRotation += (astro.bounceVx >= 0 ? 12 : -12) * dt;
+
+                        if (astro.x < pad) {
+                            astro.x = pad;
+                            astro.bounceVx = Math.abs(astro.bounceVx);
+                        } else if (astro.x > width - pad) {
+                            astro.x = width - pad;
+                            astro.bounceVx = -Math.abs(astro.bounceVx);
+                        }
+
+                        if (astro.y < pad + 50) {
+                            astro.y = pad + 50;
+                            astro.bounceVy = Math.abs(astro.bounceVy);
+                        } else if (astro.y > height - pad) {
+                            astro.y = height - pad;
+                            astro.bounceVy = -Math.abs(astro.bounceVy);
+                        }
+
+                        // 2 秒亂彈結束後，進入最後三次邊界彈射階段
+                        if (astro.bounceTimer <= 0) {
+                            astro.bounceTimer = 0;
+                            astro.finalBouncesLeft = 3;
+                        }
+                    } else if (astro.finalBouncesLeft > 0) {
+                        // 2 秒結束後減速並進行最後三次彈射階段：撞到畫面邊界反彈 3 次後才飄出畫面
+                        const decelFactor = Math.max(0.45, 1 - dt * 1.15);
+                        astro.bounceVx *= decelFactor;
+                        astro.bounceVy *= decelFactor;
+                        const minBounceSpd = 210;
+                        const curSpd = Math.hypot(astro.bounceVx, astro.bounceVy) || 1;
+                        if (curSpd < minBounceSpd) {
+                            astro.bounceVx = (astro.bounceVx / curSpd) * minBounceSpd;
+                            astro.bounceVy = (astro.bounceVy / curSpd) * minBounceSpd;
+                        }
+
+                        astro.x += astro.bounceVx * dt;
+                        astro.y += astro.bounceVy * dt;
+                        astro.fallRotation += (astro.bounceVx >= 0 ? 7.5 : -7.5) * dt;
+
+                        let bouncedThisFrame = false;
+                        if (astro.x < pad) {
+                            astro.x = pad;
+                            astro.bounceVx = Math.abs(astro.bounceVx);
+                            bouncedThisFrame = true;
+                        } else if (astro.x > width - pad) {
+                            astro.x = width - pad;
+                            astro.bounceVx = -Math.abs(astro.bounceVx);
+                            bouncedThisFrame = true;
+                        }
+
+                        if (astro.y < pad + 50) {
+                            astro.y = pad + 50;
+                            astro.bounceVy = Math.abs(astro.bounceVy);
+                            bouncedThisFrame = true;
+                        } else if (astro.y > height - pad) {
+                            astro.y = height - pad;
+                            astro.bounceVy = -Math.abs(astro.bounceVy);
+                            bouncedThisFrame = true;
+                        }
+
+                        if (bouncedThisFrame) {
+                            astro.finalBouncesLeft -= 1;
+                            if (astro.finalBouncesLeft <= 0) {
+                                const dirLen = Math.hypot(astro.bounceVx, astro.bounceVy) || 1;
+                                const driftSpeed = 195;
+                                astro.fallVx = (astro.bounceVx / dirLen) * driftSpeed;
+                                astro.fallVy = (astro.bounceVy / dirLen) * driftSpeed;
+                                astro.driftOutNoGravity = true;
+                            }
+                        }
+                    } else if (astro.driftOutNoGravity) {
+                        // 最後三次彈射後維持穩定速度直接飄出畫面
+                        astro.x += astro.fallVx * dt;
+                        astro.y += astro.fallVy * dt;
+                        astro.fallRotation += astro.fallRotSpeed * dt;
+                    } else {
+                        // 一般陣亡：受重力往下掉落
+                        astro.fallVy += 380 * dt;
+                        astro.y += astro.fallVy * dt;
+                        astro.x += astro.fallVx * dt;
+                        astro.fallRotation += astro.fallRotSpeed * dt;
+                    }
+                }
+            }
+
+            // 檢查是否所有太空人都已陣亡並離開畫面
+            const outMargin = 100;
+            const allFallenOut = astronauts.every(a =>
+                !a.alive && (a.y > height + outMargin || a.y < -outMargin || a.x < -outMargin || a.x > width + outMargin)
+            );
+            if (!anyAlive && allFallenOut) {
+                triggerGameOver(false);
+                return;
+            }
+
+            // 雙人靠近互動與 Bonus 加分邏輯（經典模式與尋寶模式皆適用，尋寶模式只顯示開心表情不加距離分）
+            if (luna && haru && luna.alive && haru.alive && luna.bounceTimer <= 0 && haru.bounceTimer <= 0) {
+                const pairDist = Math.hypot(luna.x - haru.x, luna.y - haru.y);
+                const closeThreshold = (luna.radius + haru.radius) * 1.95;
+                if (pairDist <= closeThreshold) {
+                    buddyCloseTime += dt;
+                    if (buddyCloseTime >= 3.0) {
+                        luna.buddyHappy = true;
+                        haru.buddyHappy = true;
+                        if (gameMode !== 'TREASURE' && buddyCloseTime >= 4.0) {
+                            buddyBonusTickTimer += dt;
+                            if (buddyBonusTickTimer >= 1.0) {
+                                buddyBonusTickTimer -= 1.0;
+                                distance += 10;
+                                const midX = (luna.x + haru.x) * 0.5;
+                                const midY = Math.min(luna.y, haru.y) - 42;
+                                spawnFloatingText(midX, midY, 'Bonus +10m', '#ffe66d');
+                            }
+                        }
+                    }
+                } else {
+                    buddyCloseTime = 0;
+                    buddyBonusTickTimer = 0;
+                    luna.buddyHappy = false;
+                    haru.buddyHappy = false;
+                }
+            } else {
+                buddyCloseTime = 0;
+                buddyBonusTickTimer = 0;
+                if (luna) luna.buddyHappy = false;
+                if (haru) haru.buddyHappy = false;
+            }
+
+            // 生成障礙物
+            obstacleTimer -= dt;
+            if (obstacleTimer <= 0) {
+                spawnObstacle();
+                obstacleTimer = Math.max(0.32, (0.95 / difficulty) + Math.random() * 0.35);
+            }
+
+            // 生成發光愛心道具
+            itemTimer -= dt;
+            if (itemTimer <= 0) {
+                spawnHealItem();
+                itemTimer = 7.5 + Math.random() * 4.5; // 平均 9.75 秒一顆
+            }
+
+            // 單人模式特殊道具 或 尋寶模式彩色寶珠（出現頻率為發光愛心的 1/3，即平均約 29.25 秒一次）
+            if (gameMode === 'SOLO' || gameMode === 'TREASURE') {
+                specialItemTimer -= dt;
+                if (specialItemTimer <= 0) {
+                    if (gameMode === 'SOLO') {
+                        spawnSoloPowerupItem();
+                    } else {
+                        spawnTreasureOrbItem();
+                    }
+                    specialItemTimer = 22.5 + Math.random() * 13.5; // 平均 29.25 秒，精確為愛心的 1/3 頻率
+                }
+            }
+
+            // 更新 Luna 單人模式發射的粉色小球子彈並檢測破壞障礙物
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const proj = projectiles[i];
+                proj.y += proj.vy * dt;
+
+                let hitObs = false;
+                for (let j = obstacles.length - 1; j >= 0; j--) {
+                    const obs = obstacles[j];
+                    const d = Math.hypot(proj.x - obs.x, proj.y - obs.y);
+                    if (d < proj.radius + obs.radius) {
+                        hitObs = true;
+                        spawnParticles(obs.x, obs.y, '#fbb6d3', 14, 170);
+                        spawnFloatingText(obs.x, obs.y - 12, 'Bang!', '#ffd4e6');
+                        obstacles.splice(j, 1);
+                        break;
+                    }
+                }
+
+                if (hitObs || proj.y < -20) {
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // 更新障礙物與碰撞檢測
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.x += obs.vx * dt;
+                obs.y += obs.vy * dt;
+                obs.rotation += obs.rotSpeed * dt;
+                obs.pulseTime += dt;
+
+                // 邊界反彈
+                if (obs.x < obs.visualRadius || obs.x > width - obs.visualRadius) {
+                    obs.vx *= -1;
+                }
+
+                let hit = false;
+                for (const astro of astronauts) {
+                    if (!astro.alive || astro.invulnTimer > 0 || astro.bounceTimer > 0) continue;
+
+                    const effectiveRadius = astro.shieldTimer > 0 ? astro.radius * 1.45 : astro.radius * 0.78;
+                    const dist = Math.hypot(obs.x - astro.x, obs.y - astro.y);
+                    if (dist < obs.radius + effectiveRadius) {
+                        hit = true;
+                        handleAstroHit(astro, obs);
+                        break;
+                    }
+                }
+
+                if (hit || obs.y > height + 60) {
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            // 更新道具與拾取檢測
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                item.x += (item.vx || 0) * dt;
+                item.y += item.vy * dt;
+                item.pulse += dt * 6;
+                item.rotation += (item.rotSpeed || 0) * dt;
+
+                // 滾動道具碰到左右邊界時自然回彈
+                if (item.x < 30) {
+                    item.x = 30;
+                    item.vx = Math.abs(item.vx);
+                    item.rotSpeed = Math.abs(item.rotSpeed);
+                } else if (item.x > width - 30) {
+                    item.x = width - 30;
+                    item.vx = -Math.abs(item.vx);
+                    item.rotSpeed = -Math.abs(item.rotSpeed);
+                }
+
+                let collected = false;
+                for (const astro of astronauts) {
+                    if (!astro.alive) continue;
+
+                    const dist = Math.hypot(item.x - astro.x, item.y - astro.y);
+                    if (dist < item.radius + astro.radius) {
+                        collected = true;
+                        handleItemCollect(astro, item);
+                        break;
+                    }
+                }
+
+                if (collected || item.y > height + 50) {
+                    items.splice(i, 1);
+                }
+            }
+
+            // 更新粒子特效
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.life -= p.decay * dt;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // 更新浮動文字
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.y -= 38 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) floatingTexts.splice(i, 1);
+            }
+        }
+
+        // 太空人撞擊障礙物處理
+        function handleAstroHit(astro, obs) {
+            // Haru 單人模式防護罩保護期間完全不受障礙物傷害
+            if (astro.shieldTimer > 0) {
+                sound.playShieldBlock();
+                spawnParticles(obs.x, obs.y, '#b9dcfa', 16, 170);
+                spawnFloatingText(astro.x, astro.y - 36, 'Shield!', '#b9dcfa');
+                return;
+            }
+
+            // 撞到障礙物時，雙人靠近的開心狀態立即停止並重新計算時間
+            buddyCloseTime = 0;
+            buddyBonusTickTimer = 0;
+            for (const a of astronauts) {
+                a.buddyHappy = false;
+            }
+
+            const isPink = astro.type === 'pink';
+            const luna = astronauts.find(a => a.type === 'pink');
+            const haru = astronauts.find(a => a.type === 'blue');
+            const isBomb = obs.type === 'bomb';
+
+            // 傷害計算：Luna 在 Haru 死掉後，撞到障礙物傷害是 2 顆心
+            let damage = 1;
+            if (isPink && haru && !haru.alive) {
+                damage = 2;
+            }
+
+            const prevHp = astro.hp;
+            astro.hp = Math.max(0, astro.hp - damage);
+            astro.invulnTimer = isBomb ? 2.1 : 1.4;
+            screenShake = isBomb ? 16 : 10;
+
+            const mainColor = isPink ? '#fbb6d3' : '#b9dcfa';
+            const lightColor = isPink ? '#ffd4e6' : '#dcf0ff';
+            spawnParticles(obs.x, obs.y, mainColor, isBomb ? 22 : 16, isBomb ? 230 : 180);
+            spawnParticles(astro.x, astro.y, lightColor, 12, 130);
+            if (isBomb) {
+                spawnParticles(obs.x, obs.y, '#fdba74', 18, 220);
+            }
+            updateHeartsUI();
+
+            // 爆炸障礙物特殊效果：讓撞到的太空人到處亂彈 2 秒，且另一位太空人眼睛變成 ＞_＜ 3 秒
+            if (isBomb) {
+                const randAngle = Math.random() * Math.PI * 2;
+                const bounceSpeed = 520;
+                astro.bounceTimer = 2.0;
+                astro.bounceVx = Math.cos(randAngle) * bounceSpeed;
+                astro.bounceVy = Math.sin(randAngle) * bounceSpeed;
+                if (astro.pointerId !== null) {
+                    activePointers.delete(astro.pointerId);
+                    astro.pointerId = null;
+                }
+
+                // 另一位存活太空人眼睛同步變成 ＞_＜ 維持 3 秒
+                for (const other of astronauts) {
+                    if (other.id !== astro.id && other.alive) {
+                        other.hurtTimer = Math.max(other.hurtTimer, 3.0);
+                    }
+                }
+            }
+
+            if (astro.hp <= 0) {
+                // 生命歸零：變成陣亡狀態
+                astro.alive = false;
+                astro.fallRotation = astro.currentAngle || 0;
+                astro.fallRotSpeed = astro.type === 'pink' ? -1.4 : 1.4;
+                if (astro.pointerId !== null) {
+                    activePointers.delete(astro.pointerId);
+                    astro.pointerId = null;
+                }
+
+                if (isBomb && prevHp === 1) {
+                    // 剩一條命時撞到爆炸障礙物：先亂彈 2 秒，最後一次彈射後再飄出畫面
+                    sound.playBomb();
+                } else {
+                    astro.bounceTimer = 0;
+                    astro.fallVy = -90;
+                    sound.playFall();
+                }
+
+                // 檢查是否為第一位陣亡的小太空人（另一位仍存活）
+                const alivePartners = astronauts.filter(other => other.id !== astro.id && other.alive);
+                const isFirstDown = alivePartners.length > 0;
+
+                for (const other of alivePartners) {
+                    other.partnerLost = true;
+                    other.sadPartnerTimer = 60.0;
+                }
+
+                // 只有雙人模式第一位陣亡時跳出提示字樣，第二位陣亡或單人模式不跳字
+                if (isFirstDown) {
+                    spawnFloatingText(astro.x, astro.y - 30, `${astro.name} Down!`, '#cbd5e1');
+                }
+            } else {
+                astro.hurtTimer = 3.0;
+                if (isBomb) {
+                    sound.playBomb();
+                    spawnFloatingText(astro.x, astro.y - 30, 'Boom!', '#fdba74');
+                } else {
+                    sound.playHit();
+                    spawnFloatingText(astro.x, astro.y - 30, damage >= 2 ? 'Ouch! -2' : 'Ouch!', '#ff6b81');
+                }
+            }
+        }
+
+        // 太空人拾取道具處理
+        function handleItemCollect(astro, item) {
+            if (item.kind === 'heal') {
+                sound.playHeal();
+                astro.happyTimer = 1.2;
+                spawnParticles(astro.x, astro.y, '#ff75a0', 18, 150);
+
+                if (astro.hp < astro.maxHp) {
+                    astro.hp += 1;
+                    updateHeartsUI();
+                    const upColor = astro.type === 'pink' ? '#fbb6d3' : '#b9dcfa';
+                    spawnFloatingText(astro.x, astro.y - 35, `${astro.name} 1UP`, upColor);
+                } else if (gameMode !== 'TREASURE') {
+                    distance += 35;
+                    spawnFloatingText(astro.x, astro.y - 35, 'Bonus +35m', '#ffe66d');
+                } else {
+                    spawnFloatingText(astro.x, astro.y - 35, 'Full HP!', '#fbb6d3');
+                }
+            } else if (item.kind === 'pink_shooter') {
+                sound.playHeal();
+                astro.happyTimer = 1.2;
+                astro.shootTimer = 15.0;
+                astro.shootCooldown = 0.05;
+                spawnParticles(astro.x, astro.y, '#fbb6d3', 20, 160);
+                spawnFloatingText(astro.x, astro.y - 44, 'Power Up!', '#fbb6d3');
+                spawnFloatingText(astro.x, astro.y - 24, 'Blaster 15s', '#ffd4e6');
+            } else if (item.kind === 'blue_shield') {
+                sound.playHeal();
+                astro.happyTimer = 1.2;
+                astro.shieldTimer = 15.0;
+                spawnParticles(astro.x, astro.y, '#b9dcfa', 20, 160);
+                spawnFloatingText(astro.x, astro.y - 44, 'Power Up!', '#b9dcfa');
+                spawnFloatingText(astro.x, astro.y - 24, 'Shield 15s', '#dcf0ff');
+            } else if (item.kind === 'treasure_orb') {
+                sound.playHeal();
+                astro.happyTimer = 1.2;
+                collectedOrbs.add(item.orbDef.id);
+                spawnParticles(astro.x, astro.y, item.orbDef.color, 20, 165);
+                spawnFloatingText(astro.x, astro.y - 35, 'Get!', item.orbDef.light);
+                updateTreasureHUD();
+
+                // 集齊全部 10 顆彩色寶珠即過關
+                if (collectedOrbs.size >= TREASURE_ORBS.length) {
+                    triggerGameOver(true);
+                }
+            }
+        }
+
+        function triggerGameOver(isTreasureWin = false) {
+            gameState = 'GAMEOVER';
+            const titleEl = document.getElementById('gameOverTitle');
+            const stdGrid = document.getElementById('standardResultGrid');
+            const treasureBox = document.getElementById('treasureResultBox');
+
+            if (gameMode === 'TREASURE') {
+                titleEl.textContent = isTreasureWin ? '尋寶成功！' : '遊戲結束';
+                stdGrid.classList.add('hidden');
+                treasureBox.classList.remove('hidden');
+                document.getElementById('treasureResultSubtitle').textContent = isTreasureWin
+                    ? '成功找齊全部 10 顆友情寶珠！'
+                    : '已收集友情寶珠';
+                document.getElementById('treasureResultCount').textContent = `${collectedOrbs.size} / 10`;
+                document.getElementById('treasureResultOrbs').innerHTML = TREASURE_ORBS.map(orb => {
+                    const got = collectedOrbs.has(orb.id);
+                    return `<span class="w-4 h-4 rounded-full inline-block border ${got ? 'border-white' : 'border-white/20 opacity-25'}" style="background:${orb.color};"></span>`;
+                }).join('');
+            } else {
+                titleEl.textContent = '遊戲結束';
+                stdGrid.classList.remove('hidden');
+                treasureBox.classList.add('hidden');
+
+                const finalM = Math.floor(distance);
+                if (finalM > bestDistance) {
+                    bestDistance = finalM;
+                    localStorage.setItem('twinAstroBest', bestDistance.toString());
+                }
+                document.getElementById('finalScore').textContent = `${finalM} m`;
+                document.getElementById('bestScore').textContent = `${bestDistance} m`;
+            }
+
+            document.getElementById('hudLayer').classList.add('hidden');
+            document.getElementById('topControls').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+
+        // ==========================================
+        // 7. 畫面渲染管線
+        // ==========================================
+        function draw() {
+            ctx.save();
+
+            // 太空深邃背景
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+            bgGrad.addColorStop(0, '#070913');
+            bgGrad.addColorStop(0.5, '#0e1329');
+            bgGrad.addColorStop(1, '#141936');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, width, height);
+
+            // 柔和星雲光暈
+            nebulas.forEach(n => {
+                const rad = ctx.createRadialGradient(n.x, n.y, 10, n.x, n.y, n.r);
+                rad.addColorStop(0, n.color);
+                rad.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = rad;
+                ctx.fillRect(0, 0, width, height);
+            });
+
+            // 閃爍星星
+            stars.forEach(s => {
+                const twinkleAlpha = s.alpha * (0.65 + 0.35 * Math.sin(s.twinkle));
+                ctx.fillStyle = `rgba(255, 255, 255, ${twinkleAlpha})`;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // 震動偏移
+            if (screenShake > 0) {
+                const sx = (Math.random() - 0.5) * screenShake;
+                const sy = (Math.random() - 0.5) * screenShake;
+                ctx.translate(sx, sy);
+            }
+
+            if (gameState === 'PLAYING' || gameState === 'GAMEOVER') {
+                // 繪製兩位太空人之間的微弱星光牽絆線 (當兩人都還存活時)
+                if (astronauts[0] && astronauts[1] && astronauts[0].alive && astronauts[1].alive) {
+                    const grad = ctx.createLinearGradient(astronauts[0].x, astronauts[0].y, astronauts[1].x, astronauts[1].y);
+                    grad.addColorStop(0, 'rgba(251, 182, 211, 0.22)');
+                    grad.addColorStop(1, 'rgba(185, 220, 250, 0.22)');
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([6, 8]);
+                    ctx.beginPath();
+                    ctx.moveTo(astronauts[0].x, astronauts[0].y);
+                    ctx.lineTo(astronauts[1].x, astronauts[1].y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // 繪製道具
+                items.forEach(item => drawItem(ctx, item));
+
+                // 繪製 Luna 單人模式發射的粉色小球子彈
+                projectiles.forEach(proj => {
+                    ctx.save();
+                    const pGrad = ctx.createRadialGradient(proj.x - 2, proj.y - 2, 1, proj.x, proj.y, proj.radius);
+                    pGrad.addColorStop(0, '#ffffff');
+                    pGrad.addColorStop(0.5, '#ffd4e6');
+                    pGrad.addColorStop(1, '#fbb6d3');
+                    ctx.fillStyle = pGrad;
+                    ctx.shadowColor = '#fbb6d3';
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.arc(proj.x, proj.y, proj.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+
+                // 繪製障礙物
+                obstacles.forEach(obs => drawObstacle(ctx, obs));
+
+                // 繪製小太空人
+                astronauts.forEach(astro => {
+                    // 觸控引導光圈 (手指按住時顯示)
+                    if (astro.alive && astro.pointerId !== null) {
+                        ctx.save();
+                        ctx.strokeStyle = astro.type === 'pink' ? 'rgba(251, 182, 211, 0.45)' : 'rgba(185, 220, 250, 0.45)';
+                        ctx.lineWidth = 2.5;
+                        ctx.beginPath();
+                        ctx.arc(astro.x, astro.y, astro.radius * 1.45, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    drawAstronaut(ctx, astro);
+                });
+
+                // 繪製粒子特效
+                particles.forEach(p => {
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, p.life);
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+
+                // 繪製浮動文字（支援多行顯示）
+                floatingTexts.forEach(ft => {
+                    ctx.save();
+                    ctx.globalAlpha = Math.min(1, ft.life);
+                    ctx.font = 'bold 16px "Fredoka", "Noto Sans TC", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = ft.color;
+                    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+                    ctx.shadowBlur = 6;
+                    const lines = String(ft.text).split('\n');
+                    lines.forEach((line, idx) => {
+                        ctx.fillText(line, ft.x, ft.y + idx * 20);
+                    });
+                    ctx.restore();
+                });
+            }
+
+            ctx.restore();
+        }
+
+        // 首頁預覽畫布動畫 (展示兩位小太空人漂浮揮手，並記錄位置供點擊進入各自單人模式)
+        let previewTime = 0;
+        let previewLunaPos = { x: 0, y: 0 };
+        let previewHaruPos = { x: 0, y: 0 };
+
+        function drawStartPreview(dt) {
+            if (gameState !== 'START') return;
+            const rect = previewCanvas.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+
+            previewTime += dt;
+            const pw = rect.width;
+            const ph = rect.height;
+
+            previewCtx.clearRect(0, 0, pw, ph);
+
+            // 根據縮放比例計算恰到好處的水平間距，讓揮手時手部剛好輕輕碰到一瞬間
+            const previewScale = 0.88;
+            const halfGap = Math.max(pw * 0.175, 52 * previewScale);
+
+            const lunaX = pw * 0.5 - halfGap;
+            const lunaY = ph * 0.54 + Math.sin(previewTime * 2.5) * 6;
+            const haruX = pw * 0.5 + halfGap;
+            const haruY = ph * 0.54 + Math.cos(previewTime * 2.5) * 6;
+
+            previewLunaPos = { x: lunaX, y: lunaY };
+            previewHaruPos = { x: haruX, y: haruY };
+
+            const pinkPreview = {
+                type: 'pink',
+                x: lunaX,
+                y: lunaY,
+                vx: 0,
+                currentAngle: Math.sin(previewTime * 2.2) * 0.11,
+                scale: previewScale,
+                alive: true,
+                invulnTimer: 0,
+                happyTimer: 1,
+                hurtTimer: 0,
+                sadPartnerTimer: 0,
+                partnerLost: false,
+                shieldTimer: 0,
+                animTime: previewTime,
+                phaseOffset: 0
+            };
+
+            const bluePreview = {
+                type: 'blue',
+                x: haruX,
+                y: haruY,
+                vx: 0,
+                currentAngle: Math.sin(previewTime * 2.2 + 1.5) * 0.11,
+                scale: previewScale,
+                alive: true,
+                invulnTimer: 0,
+                happyTimer: 1,
+                hurtTimer: 0,
+                sadPartnerTimer: 0,
+                partnerLost: false,
+                shieldTimer: 0,
+                animTime: previewTime,
+                phaseOffset: 1.5
+            };
+
+            drawAstronaut(previewCtx, pinkPreview);
+            drawAstronaut(previewCtx, bluePreview);
+        }
+
+        // 主時間軸
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = Math.min(0.05, (timestamp - lastTime) / 1000);
+            lastTime = timestamp;
+
+            update(dt);
+            draw();
+            drawStartPreview(dt);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ==========================================
+        // 8. UI 按鈕與主畫面角色點擊事件綁定
+        // ==========================================
+        async function startGameFlow(mode = 'CLASSIC', chosenSoloChar = null) {
+            await sound.init();
+            sound.playStart();
+            gameMode = mode;
+            if (mode === 'SOLO') {
+                soloCharacter = chosenSoloChar || (Math.random() < 0.5 ? 'pink' : 'blue');
+            }
+            resetGame();
+            gameState = 'PLAYING';
+
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('hudLayer').classList.remove('hidden');
+            document.getElementById('topControls').classList.remove('hidden');
+        }
+
+        // 經典雙人模式
+        document.getElementById('startBtn').addEventListener('click', () => startGameFlow('CLASSIC'));
+        // 單人模式（隨機分配 Luna 或 Haru）
+        document.getElementById('soloModeBtn').addEventListener('click', () => startGameFlow('SOLO', null));
+        // 尋寶模式
+        document.getElementById('treasureModeBtn').addEventListener('click', () => startGameFlow('TREASURE'));
+
+        // 點擊主畫面預覽窗中的 Luna 或 Haru，直接進入該角色的單人模式
+        previewCanvas.addEventListener('pointerdown', (e) => {
+            if (gameState !== 'START') return;
+            const rect = previewCanvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+
+            const distLuna = Math.hypot(px - previewLunaPos.x, py - previewLunaPos.y);
+            const distHaru = Math.hypot(px - previewHaruPos.x, py - previewHaruPos.y);
+
+            if (distLuna <= 58 && distLuna <= distHaru) {
+                startGameFlow('SOLO', 'pink');
+            } else if (distHaru <= 58 && distHaru < distLuna) {
+                startGameFlow('SOLO', 'blue');
+            }
+        });
+
+        // 再次出發（沿用目前遊玩的模式；若是隨機單人模式則重新隨機或再次出發）
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            startGameFlow(gameMode, gameMode === 'SOLO' ? soloCharacter : null);
+        });
+
+        document.getElementById('homeBtn').addEventListener('click', () => {
+            gameState = 'START';
+            obstacles = [];
+            items = [];
+            projectiles = [];
+            particles = [];
+            floatingTexts = [];
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('hudLayer').classList.add('hidden');
+            document.getElementById('topControls').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+        });
+
+        document.getElementById('soundToggleBtn').addEventListener('click', async () => {
+            await sound.init();
+            sound.enabled = !sound.enabled;
+            const soundIcon = document.getElementById('soundIcon');
+            if (sound.enabled) {
+                soundIcon.innerHTML = `<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>`;
+            } else {
+                soundIcon.innerHTML = `<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>`;
+            }
+        });
+
+        // 啟動初始化
+        window.onload = function () {
+            resizeCanvas();
+            initBackground();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
+```
