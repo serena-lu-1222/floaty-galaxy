@@ -2045,7 +2045,8 @@
                     distance += 35;
                     spawnFloatingText(astro.x, astro.y - 35, 'Bonus +35m', '#ffe66d');
                 } else {
-                    spawnFloatingText(astro.x, astro.y - 35, 'Full HP!', '#fbb6d3');
+                    const fullHpColor = astro.type === 'pink' ? '#fbb6d3' : '#b9dcfa';
+                    spawnFloatingText(astro.x, astro.y - 35, 'Full HP!', fullHpColor);
                 }
             } else if (item.kind === 'pink_shooter') {
                 sound.playHeal();
